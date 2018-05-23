@@ -4,14 +4,13 @@ import plex
 
 
 class ParseError(Exception):
-	""" A user defined exception class, to describe parse errors. """
+	
 	pass
 
 
 
 class MyParser:
-	""" A class encapsulating all parsing functionality
-	for a particular grammar. """
+	
 	
 	def create_scanner(self,fp):
 		""" Creates a plex scanner for a particular grammar 
@@ -21,40 +20,42 @@ class MyParser:
 		letter = plex.Range("AZaz")
 		digit = plex.Range("09")
 
-		string = plex.Rep1(letter | digit)
-		operator = plex.Any("!?()")		
-		space = plex.Any(" \t\n")
+		keywords = plex.Str("print", "not", "and", "or")
+                true_keyword = plex.NoCase(plex.Str("true", "t", "1"))
+                false_keyword = plex.NoCase(plex.Str("false", "f", "0"))
+                identifier = letter + plex.Rep(letter | digit)
+                assign = plex.Str("=")
+                parenthesis = plex.Str("(", ")")
+                space = plex.Rep1(plex.Any(" \n\t"))
 
-		# the scanner lexicon - constructor argument is a list of (pattern,action ) tuples
-		lexicon = plex.Lexicon([
-			(operator,plex.TEXT),
-			(space,plex.IGNORE),
-			(string, 'string')
-			])
+           lexicon = plex.Lexicon([
+            (keywords, plex.TEXT),
+            (true_keyword, "True"),
+            (false_keyword, "False"),
+            (identifier, "IDENTIFIER"),
+            (assign, "="),
+            (parenthesis, plex.TEXT),
+            (space, plex.IGNORE)
+        ])
 		
-		# create and store the scanner object
+		
 		self.scanner = plex.Scanner(lexicon,fp)
 		
-		# get initial lookahead
+	
 		self.la,self.val = self.next_token()
 
 
 	def next_token(self):
-		""" Returns tuple (next_token,matched-text). """
+		
 		
 		return self.scanner.read()		
 
 	
-	def position(self):
-		""" Utility function that returns position in text in case of errors.
-		Here it simply returns the scanner position. """
-		
-		return self.scanner.position()
+	
 	
 
 	def match(self,token):
-		""" Consumes (matches with current lookahead) an expected token.
-		Raises ParseError if anything else is found. Acquires new lookahead. """ 
+		
 		
 		if self.la==token:
 			self.la,self.val = self.next_token()
@@ -63,71 +64,133 @@ class MyParser:
 	
 	
 	def parse(self,fp):
-		""" Creates scanner for input file object fp and calls the parse logic code. """
 		
-		# create the plex scanner for fp
+		
 		self.create_scanner(fp)
 		
-		# call parsing logic
+		
 		self.session()
-	
-			
-	def session(self):
-		""" Session  -> Facts Question | ( Session ) Session """
+	def stmt_list(self):
+     
+        if self.la in ["IDENTIFIER", "print"]:
 		
-		if self.la=='!' or self.la=='?':
-			self.facts()
-			self.question()
-		elif self.la=='(':
-			self.match('(')
-			self.session()
-			self.match(')')
-			self.session()	
-		else:
-			raise ParseError("in session: !, ? or ( expected")
-			 	
+            self.stmt()
 	
-	def facts(self):
-		""" Facts -> Fact Facts | ε """
+            self.stmt_list()
 		
-		if self.la=='!':
-			self.fact()
-			self.facts()
-		elif self.la=='?':	# from FOLLOW set!
-			return
-		else:
-			raise ParseError("in facts: ! or ? expected")
+        elif self.la is None:
+            return
+        else:
+            raise ParseError("Excpected: identifier or print")
 	
-	
-	def fact(self):
-		""" Fact -> ! string """
+	def stmt(self):
+      
+        if self.la == "IDENTIFIER":
 		
-		if self.la=='!':
-			self.match('!')
-			self.match('string')
-		else:
-			raise ParseError("in fact: ! expected")
-			 	
+            self.match("IDENTIFIER")
+            self.match("=")
+            self.expr()
+        elif self.la == "print":
+		
+            self.match("print")
+            self.expr()
+        else:
+		
+            raise ParseError("Excpected: identifier or print")	
+	
+	def expr(self):
+        
+        if self.la in ["(", "not", "IDENTIFIER", "True", "False"]:
+		
+            self.term()
+            self.term_tail()
+        else:
+            raise ParseError("Excpected: '(' or IDENTIFIER or boool value")
+	
+	def term_tail(self):
+        
+        if self.la == "or":
+		
+            self.orp()
+            self.term()
+            self.term_tail()
+            return
+        elif self.la in ["IDENTIFIER", "print", ")"] or self.la is None:
+            return
+        else:
+            raise ParseError("Excpected: 'or'")
+	
+	def term(self):
+       
+        if self.la in ["(", "not", "IDENTIFIER", "True", "False"]:
+		
+            self.factor_fnotp()
+            self.factor()
+            return
+        else:
+            raise ParseError("Excpected: '(' or IDENTIFIER or boool value")
+	
+	 def factor(self):
+  
+         if self.la == "and":
+		
+            self.andp()
+            self.factor_and_fnotp()
+            self.factor()
+            return
+         elif self.la in ["or", "print", "IDENTIFIER", ")"] or self.la is None:
+            return
+         else:
+            raise ParseError("Excpected: 'and'")
+	
+	def factor_fnotp(self):
+      
+        self.notp()
+        if self.la == '(':
+		
+            self.match('(')
+            self.expr()
+            self.match(')')
+            return
+        elif self.la == "IDENTIFIER":
+            self.match(self.la)
+        elif self.la in ["True", "False"]:
+            self.match(self.la)
+        else:
+            raise ParseError("Excpected: id, (expr), values")
+	
+	def orp(self):
+     
+        if self.la == "or":
+            self.match("or")
+        else:
+            raise ParseError("Excpected: 'or'")
+	
+	def andp(self):
+       
+        if self.la == "and":
+            self.match("and")
+        else:
+            raise ParseError("Excpected: 'and'")
+	
+	def notp(self):
+ 
+        if self.la == "not":
+            self.match("not")
+        else:
+            return
+	
+	
+		
 
-	def question(self):
-		""" Question -> ? string """
-		
-		if self.la=='?':
-			self.match('?')
-			self.match('string')
-		else:
-			raise ParseError("in question: ? expected")
 
-		
-# the main part of prog
 
-# create the parser object
 parser = MyParser()
 
-# open file for parsing
+
 with open("recursive-descent-parsing.txt","r") as fp:
 
-	# parse file
+	
 	try:
 		parser.parse(fp)
 	except plex.errors.PlexError:
