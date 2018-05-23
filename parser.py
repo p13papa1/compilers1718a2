@@ -130,20 +130,20 @@ class MyParser:
         else:
             raise ParseError("Excpected: '(' or IDENTIFIER or boool value")
 	
-	 def factor(self):
+	 def factor_tail(self):
   
          if self.la == "and":
 		
             self.andp()
-            self.factor_and_fnotp()
             self.factor()
+            self.factor_tail()
             return
          elif self.la in ["or", "print", "IDENTIFIER", ")"] or self.la is None:
             return
          else:
             raise ParseError("Excpected: 'and'")
 	
-	def factor_fnotp(self):
+	def factor(self):
       
         self.notp()
         if self.la == '(':
